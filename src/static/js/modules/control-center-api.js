@@ -1,0 +1,150 @@
+/**
+ * Control Center API Module
+ * 
+ * Provides abstraction layer for all Control Center API calls.
+ */
+
+/**
+ * List all configured remote agents
+ * @returns {Promise<Object>} Response with connections array
+ */
+export async function listAgents() {
+    const response = await fetch('/api/cc/list');
+    return await response.json();
+}
+
+/**
+ * Add a new remote agent
+ * @param {string} alias - Agent alias
+ * @param {string} host - Remote host
+ * @param {number} port - Remote port
+ * @param {boolean} useTls - Whether to use TLS (default: true)
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function addAgent(alias, host, port, useTls = true) {
+    const response = await fetch('/api/cc/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias, host, port, use_tls: useTls })
+    });
+    return await response.json();
+}
+
+/**
+ * Remove a remote agent
+ * @param {string} alias - Agent alias to remove
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function removeAgent(alias) {
+    const response = await fetch('/api/cc/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias })
+    });
+    return await response.json();
+}
+
+/**
+ * Connect to a remote agent (with password)
+ * @param {string} alias - Agent alias
+ * @param {string} password - Admin password
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function connectAgent(alias, password) {
+    const response = await fetch('/api/cc/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias, password })
+    });
+    return await response.json();
+}
+
+/**
+ * Disconnect from a remote agent
+ * @param {string} alias - Agent alias
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function disconnectAgent(alias) {
+    const response = await fetch('/api/cc/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias })
+    });
+    return await response.json();
+}
+
+/**
+ * Switch active agent
+ * @param {string} alias - Agent alias to switch to ('local' for local daemon)
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function switchAgent(alias) {
+    const response = await fetch(`/api/cc/switch/${alias}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    });
+    return await response.json();
+}
+
+/**
+ * Check agent connection health
+ * @param {string} alias - Agent alias
+ * @returns {Promise<Object>} Response with healthy status
+ */
+export async function checkAgentHealth(alias) {
+    const response = await fetch(`/api/cc/health/${alias}`);
+    return await response.json();
+}
+
+/**
+ * Update TLS preference for an agent
+ * @param {string} alias - Agent alias
+ * @param {boolean} useTls - New TLS preference
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function updateTls(alias, useTls) {
+    const response = await fetch('/api/cc/update_tls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias, use_tls: useTls })
+    });
+    return await response.json();
+}
+
+/**
+ * Discover agents on the network via mDNS and UDP broadcast
+ * @param {number} timeout - Discovery timeout in seconds (default: 3)
+ * @returns {Promise<Object>} Response with agents array, mdns_available flag, count
+ */
+export async function discoverAgents(timeout = 3) {
+    const response = await fetch('/api/cc/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeout })
+    });
+    return await response.json();
+}
+
+/**
+ * Update an existing agent connection
+ * @param {string} oldAlias - Current alias of the agent
+ * @param {string} newAlias - New alias (can be same as old)
+ * @param {string} host - New host
+ * @param {number} port - New port
+ * @param {boolean} useTls - New TLS setting
+ * @returns {Promise<Object>} Response with success status
+ */
+export async function updateAgent(oldAlias, newAlias, host, port, useTls) {
+    const response = await fetch('/api/cc/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            old_alias: oldAlias,
+            alias: newAlias,
+            host,
+            port,
+            use_tls: useTls
+        })
+    });
+    return await response.json();
+}

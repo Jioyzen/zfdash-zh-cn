@@ -1,0 +1,124 @@
+[project]
+name = "zfdash"
+version = "2.0.0-beta"
+description = "A modern graphical interface for managing ZFS storage pools, datasets, snapshots, and encryption."
+readme = "README.md"
+license = { text = "GPL-3.0" }
+authors = [
+    { name = "Ayham(ad4mts) and Contributors" }
+]
+requires-python = ">=3.10"
+keywords = ["zfs", "storage", "gui", "management", "snapshots", "encryption"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Web Environment",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Filesystems",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    # GUI framework - Qt6 bindings (not available on FreeBSD)
+    # 6.4.0+: Stable Python 3.10-3.12 support, mature Qt 6.4 LTS base
+    # <6.8.1: GitHub ARM runners need manylinux_2_31, 6.8.1+ requires manylinux_2_39
+    # Note: PySide6 7.x will likely have breaking changes
+    "PySide6>=6.4.0,<6.8.1; platform_system != 'FreeBSD'",
+    
+    # Web framework
+    # 2.0+: Has all features we use (flash, session, redirect, jsonify)
+    # 3.0+: Dropped Python 3.7, otherwise compatible
+    "Flask>=2.0.0",
+    
+    # WSGI production server
+    # 2.0+: Stable channel-based architecture, Python 3.7+
+    # 3.0+: Python 3.9+ (matches our requires-python)
+    "waitress>=2.0.0",
+    
+    # Session management for Flask
+    # 0.6.0+: Stable API with current_user, login_required, etc.
+    "Flask-Login>=0.6.0",
+
+    # SSL Certificate Authority Bundle
+    # Ensures reliable HTTPS requests across all platforms (fixes SSL errors on some systems)
+    "certifi>=2024.0.0",
+    
+    # Cryptography library for TLS certificate generation
+    # 41.0+: Stable API for x509 certificate generation
+    "cryptography>=41.0.0",
+    
+    # Network discovery (mDNS/Bonjour support)
+    # Used for agent discovery on local network
+    "zeroconf>=0.80.0",
+    
+    # SSH client library for SSH backup with password auth
+    # 2.7+: Python 3 support, stable SSHClient API
+    # Falls back to sshpass if paramiko not available
+    "paramiko>=2.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Jioyzen/zfdash-zh-cn"
+Repository = "https://github.com/Jioyzen/zfdash-zh-cn"
+Issues = "https://github.com/Jioyzen/zfdash-zh-cn/issues"
+
+[project.optional-dependencies]
+dev = [
+    # Bundler for creating standalone executables
+    # 6.0+: Full Python 3.12 support, improved hooks
+    "pyinstaller>=6.0.0",
+    # Testing framework (if tests are added)
+    "pytest>=7.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv]
+# Use Python 3.13 by default for builds
+python-preference = "managed"
+
+# Environments to resolve dependencies for (cross-platform support)
+# Only specify systems; uv will resolve for all architectures automatically
+# environments = [
+#     "sys_platform == 'linux'",      # All Linux architectures
+#     "sys_platform == 'darwin'",     # All macOS architectures
+#     "sys_platform == 'win32'",      # All Windows architectures
+#     "sys_platform == 'freebsd'",    # All FreeBSD architectures
+# ]
+#examples:    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+#    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+#    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+#    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+#    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+
+# Required environments: ensures uv finds compatible wheels for all platforms
+# This tells uv to resolve versions that work on ALL these platforms
+# Note: Windows ARM64 excluded - PySide6 <6.8.1 has no win_arm64 wheels
+# "sys_platform == 'freebsd'" didnt work reliably
+required-environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'darwin'",
+    ##"sys_platform == 'win32' and platform_system != 'FreeBSD'", #fix marker overlap
+    "platform_system == 'FreeBSD'",  
+]
+# "sys_platform == 'linux' and platform_machine == 'x86_64'",
+[tool.uv.sources]
+# All packages from PyPI (default)
+
+[tool.pyinstaller]
+# PyInstaller configuration (for reference, actual args in build.sh)
+name = "zfdash"
+onefile = false
+console = false

@@ -1,0 +1,89 @@
+name: Docker Publish
+
+on:
+  # Run only when new version tags are created (e.g., v1.9.0)
+  push:
+    tags: [ 'v*.*.*' ]
+  # Run builds on pull requests targeting main to validate changes (no publishing)
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  # GitHub Container Registry
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME_GHCR: ${{ github.repository }}
+
+  # Docker Hub Image Name (the user/org will be taken from secrets)
+  IMAGE_NAME_DOCKERHUB: zfdash
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # Required for ghcr.io authentication.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        # Use an env var to check for the secret's presence.
+        # This avoids a workflow error when secrets are not available, e.g. in PRs from forks.
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        if: github.event_name != 'pull_request' && env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Prepare Docker Hub image name for metadata
+        id: prep_dockerhub
+        # Use the same condition as the login step to decide if we should generate the Docker Hub image name.
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        if: github.event_name != 'pull_request' && env.DOCKERHUB_USERNAME != ''
+        run: echo "image_name=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME_DOCKERHUB }}" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+            ${{ steps.prep_dockerhub.outputs.image_name }}
+          tags: |
+            # On every git tag push, use the raw tag name (e.g., v1.8.7-beta)
+            type=ref,event=tag
+            # Set latest tag on main branch push OR tag push
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' || github.ref == 'refs/heads/main' }}
+            # ----------------------------------------------------
+            #type=raw,value=latest,enable={{is_default_branch}}
+            #type=semver,pattern={{version}}
+            #type=semver,pattern={{major}}.{{minor}}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

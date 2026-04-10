@@ -1,0 +1,19 @@
+/* --- ZfDash Main Stylesheet --- */
+
+/* 1. Variables & Base */
+@import "modules/variables.css";
+@import "modules/base.css";
+@import "modules/utilities.css";
+
+/* 2. Layout */
+@import "modules/layout.css";
+
+/* 3. Components */
+@import "modules/components/buttons.css";
+@import "modules/components/navbar.css";
+@import "modules/components/sidebar.css";
+@import "modules/components/tables.css";
+@import "modules/components/modals.css";
+@import "modules/components/pool-manager.css";
+@import "modules/components/login.css";
+@import "modules/components/dashboard.css";

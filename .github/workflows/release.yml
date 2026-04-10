@@ -1,0 +1,51 @@
+# DISABLED: Replaced by release-crossplatform.yml
+# To re-enable, uncomment the 'on:' trigger below
+
+name: Release (Legacy - Disabled)
+
+# on:
+#   push:
+#     tags:
+#       - 'v*.*.*'
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'This workflow is disabled. Use release-crossplatform.yml instead.'
+        required: false
+# ------------------------------------------------------
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write  # Required for creating releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git describe
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Run release script
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x ./scripts/release.sh
+          chmod +x ./build.sh
+          ./scripts/release.sh "${{ steps.version.outputs.VERSION }}" --github --yes

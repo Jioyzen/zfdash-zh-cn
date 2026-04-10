@@ -1,0 +1,799 @@
+# --- START OF FILE widgets/pool_editor_widget.py ---
+
+from typing import Optional, Dict, List, Any # Import necessary types
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, QPushButton,
+    QMessageBox, QInputDialog, QComboBox, QLabel, QDialog, QDialogButtonBox,
+    QHeaderView, QApplication, QAbstractItemView, QSplitter, QListWidget,
+    QListWidgetItem, QLineEdit, QCheckBox, QTreeWidgetItemIterator # added QTreeWidgetItemIterator
+)
+from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QIcon, QColor, QPalette
+
+# Assuming models.py is in the parent directory or Python path
+import sys
+import os
+# Use ..widgets for relative imports if structure allows, otherwise adjust path
+try:
+    # Assuming models, utils, zfs_manager are accessible in the Python path
+    from models import Pool
+    import utils
+    # Import client class and errors
+    from zfs_manager import ZfsManagerClient, ZfsCommandError, ZfsClientCommunicationError
+except ImportError:
+    # Fallback for potential path issues or running standalone
+    print("Warning: Could not import models/utils/zfs_manager. Functionality may be limited.")
+    # Define mocks or stubs if needed for standalone testing
+    class Pool: # Dummy class for standalone testing if needed
+         def __init__(self, name="dummy", status_details=""):
+              self.name = name
+              self.status_details = status_details
+    class MockUtils:
+        def format_size(self, size): return str(size)
+        def parse_size(self, size_str): return int(size_str) if size_str.isdigit() else 0
+    class MockZFSManagerClient: # Use Mock Client
+        def list_block_devices(self): return []
+        def __getattr__(self, name): return lambda *a, **k: (_ for _ in ()).throw(RuntimeError(f"MockZFSManagerClient.{name} called"))
+    utils = MockUtils()
+    # Assign mock client class
+    ZfsManagerClient = MockZFSManagerClient
+    class QColor: # Dummy QColor if Qt not fully available
+        def __init__(self, *args): pass
+    class QPalette: # Dummy QPalette
+        ColorRole = None
+        def color(self, role, group): return None
+
+# --- NEW: Import Help Strings ---
+try:
+    # Try importing from src.help_strings if running as module
+    from help_strings import HELP
+except ImportError:
+    try:
+        # Try relative import if running from package
+        from ..help_strings import HELP
+    except ImportError:
+        # Fallback if path issues
+        print("Warning: Could not import help_strings. Using fallback strings.")
+        HELP = {}
+
+
+
+# --- Module-level Constants ---
+ITEM_TYPE_ROLE = Qt.UserRole + 1
+DEVICE_PATH_ROLE = Qt.UserRole + 2
+VDEV_TYPE_ROLE = Qt.UserRole + 3
+DEVICE_STATE_ROLE = Qt.UserRole + 4
+ITEM_INDENT_ROLE = Qt.UserRole + 5
+VDEV_DEVICES_ROLE = Qt.UserRole + 6 # Re-using role from CreatePoolDialog for consistency
+
+class PoolEditorWidget(QWidget):
+    """Widget for editing an existing ZFS pool's structure (Refined Text Parsing)."""
+    # Signals
+    status_message = Signal(str)
+    attach_device_requested = Signal(str, str, str) # pool, existing_dev, new_dev
+    detach_device_requested = Signal(str, str) # pool, device
+    replace_device_requested = Signal(str, str, str) # pool, old_dev, new_dev (empty if mark only)
+    offline_device_requested = Signal(str, str, bool) # pool, device, temporary
+    online_device_requested = Signal(str, str, bool) # pool, device, expand
+    add_vdev_requested = Signal(str, list, bool) # pool, vdev_specs_list, force
+    remove_vdev_requested = Signal(str, str) # pool, device_or_vdev_id
+    split_pool_requested = Signal(str, str, dict) # old_pool, new_pool, options
+
+    def __init__(self, zfs_client: ZfsManagerClient, parent=None):
+        super().__init__(parent)
+        self._current_pool: Optional[Pool] = None
+
+        # Store the client instance
+        self.zfs_client = zfs_client
+        if self.zfs_client is None:
+            raise ValueError("ZfsManagerClient instance is required for PoolEditorWidget.")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # --- Toolbar ---
+        toolbar_layout = QHBoxLayout()
+        self.attach_button = QPushButton(QIcon.fromTheme("list-add"), "Attach (Mirror)")
+        self.attach_button.clicked.connect(self._attach_device)
+        self.detach_button = QPushButton(QIcon.fromTheme("list-remove"), "Detach")
+        self.detach_button.clicked.connect(self._detach_device)
+        self.replace_button = QPushButton(QIcon.fromTheme("edit-find-replace"), "Replace")
+        self.replace_button.clicked.connect(self._replace_device)
+        self.offline_button = QPushButton(QIcon.fromTheme("media-playback-stop"), "Offline")
+        self.offline_button.clicked.connect(self._offline_device)
+        self.online_button = QPushButton(QIcon.fromTheme("media-playback-start"), "Online")
+        self.online_button.clicked.connect(self._online_device)
+        self.add_vdev_button = QPushButton(QIcon.fromTheme("edit-add"), "Add VDEV")
+        self.add_vdev_button.clicked.connect(self._add_vdev)
+        self.remove_vdev_button = QPushButton(QIcon.fromTheme("edit-delete"), "Remove")
+        self.remove_vdev_button.clicked.connect(self._remove_vdev)
+        self.split_button = QPushButton(QIcon.fromTheme("edit-cut"), "Split")
+        self.split_button.clicked.connect(self._split_pool)
+
+        # Add buttons to layout (adjust spacing/stretch as needed)
+        toolbar_layout.addWidget(self.attach_button)
+        toolbar_layout.addWidget(self.detach_button)
+        toolbar_layout.addWidget(self.replace_button)
+        toolbar_layout.addWidget(self.offline_button)
+        toolbar_layout.addWidget(self.online_button)
+        toolbar_layout.addSpacing(20) # Separator
+        toolbar_layout.addWidget(self.add_vdev_button)
+        toolbar_layout.addWidget(self.remove_vdev_button)
+        toolbar_layout.addWidget(self.split_button)
+        toolbar_layout.addStretch()
+        layout.addLayout(toolbar_layout)
+
+        # --- Tree View ---
+        self.pool_tree = QTreeWidget()
+        self.pool_tree.setColumnCount(5)
+        self.pool_tree.setHeaderLabels(["Pool / VDEV / Device", "State", "Read", "Write", "Cksum"])
+        self.pool_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.pool_tree.setAlternatingRowColors(True)
+        header = self.pool_tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for i in range(1, 5):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self.pool_tree.itemSelectionChanged.connect(self._update_button_states)
+        layout.addWidget(self.pool_tree)
+
+        self.setLayout(layout)
+        self._update_button_states()
+
+    def set_pool(self, pool: Optional[Pool]):
+        """Populates the editor using the vdev_tree or status_details from the Pool object."""
+        self._current_pool = pool
+        self.pool_tree.clear()
+
+        if not pool:
+             self._current_pool_status_text = ""
+             self._update_button_states()
+             return
+
+        # Prefer structured vdev_tree if available (from zpool status -j)
+        vdev_tree = getattr(pool, 'vdev_tree', {})
+        if vdev_tree:
+            self.status_message.emit(f"Loading layout for {pool.name}...")
+            self._build_tree_from_vdev_tree(vdev_tree, pool.name)
+            self.status_message.emit("")
+        else:
+            # No vdev_tree available (legacy fallback is now handled in backend or not at all)
+            print(f"PoolEditorWidget: Warning - Pool '{pool.name}' has no vdev_tree.", file=sys.stderr)
+            error_item = QTreeWidgetItem(self.pool_tree)
+            error_item.setText(0, f"Status details unavailable for {pool.name}")
+            error_item.setIcon(0, QIcon.fromTheme("dialog-warning"))
+            self._update_button_states()
+            return
+
+        self.pool_tree.expandAll()
+        if self.pool_tree.topLevelItemCount() > 0:
+            self.pool_tree.setCurrentItem(self.pool_tree.topLevelItem(0))
+        self._update_button_states()
+
+    def _build_tree_from_vdev_tree(self, vdev_node: Dict[str, Any], pool_name: str):
+        """Recursively builds the QTreeWidget from the structured vdev_tree dictionary."""
+        app_palette = QApplication.palette()
+
+        # Create the root pool item
+        pool_item = QTreeWidgetItem(self.pool_tree)
+        pool_item.setText(0, pool_name)
+        pool_item.setData(0, ITEM_TYPE_ROLE, 'pool')
+        pool_item.setData(0, ITEM_INDENT_ROLE, -1)
+        pool_item.setIcon(0, QIcon.fromTheme("drive-harddisk"))
+
+        pool_state = vdev_node.get('state', 'UNKNOWN')
+        pool_item.setText(1, pool_state)
+        pool_item.setData(0, DEVICE_STATE_ROLE, pool_state)
+        self._set_item_state_color(pool_item, 1, pool_state, app_palette)
+
+        # Recursively add children
+        self._add_vdev_children(pool_item, vdev_node.get('children', []), app_palette)
+
+    def _add_vdev_children(self, parent_item: QTreeWidgetItem, children: List[Dict[str, Any]], palette: QPalette):
+        """Recursively adds child VDEVs/devices to the tree."""
+        for child in children:
+            item = QTreeWidgetItem(parent_item)
+            name = child.get('name', 'unknown')
+            vdev_type = child.get('type', 'unknown')
+            state = child.get('state', 'UNKNOWN')
+            read_errors = child.get('read_errors', '0')
+            write_errors = child.get('write_errors', '0')
+            checksum_errors = child.get('checksum_errors', '0')
+            device_path = child.get('path')  # Only present for leaf devices
+
+            item.setText(0, name)
+            item.setText(1, state)
+            item.setText(2, read_errors)
+            item.setText(3, write_errors)
+            item.setText(4, checksum_errors)
+
+            # Determine item type
+            is_leaf_device = vdev_type == 'disk' and device_path
+            item_type = 'device' if is_leaf_device else 'vdev'
+
+            item.setData(0, ITEM_TYPE_ROLE, item_type)
+            item.setData(0, VDEV_TYPE_ROLE, vdev_type)
+            item.setData(0, DEVICE_STATE_ROLE, state)
+            if device_path:
+                item.setData(0, DEVICE_PATH_ROLE, device_path)
+
+            # Set icon based on type
+            if is_leaf_device:
+                item.setIcon(0, QIcon.fromTheme("media-floppy"))
+            elif vdev_type in ['log', 'cache', 'spare', 'special', 'dedup']:
+                item.setIcon(0, QIcon.fromTheme("drive-removable-media"))
+            elif vdev_type in ['mirror', 'raidz', 'raidz1', 'raidz2', 'raidz3', 'draid']:
+                item.setIcon(0, QIcon.fromTheme("drive-multidisk"))
+            else:
+                item.setIcon(0, QIcon.fromTheme("drive-harddisk"))
+
+            # Set tooltip
+            tooltip = f"Name: {name}\nType: {vdev_type}\nState: {state}"
+            if device_path:
+                tooltip += f"\nPath: {device_path}"
+            item.setToolTip(0, tooltip)
+
+            # Set state color
+            self._set_item_state_color(item, 1, state, palette)
+
+            # Recurse for children
+            child_children = child.get('children', [])
+            if child_children:
+                self._add_vdev_children(item, child_children, palette)
+
+
+
+    def _set_item_state_color(self, item: QTreeWidgetItem, column: int, state: str, palette: QPalette):
+        """Sets background color based on device/pool state."""
+        state_upper = state.upper() if isinstance(state, str) else "UNKNOWN"
+        color = None
+
+        # Define colors (consider making these configurable or theme-aware)
+        color_online = palette.color(QPalette.ColorGroup.Normal, QPalette.ColorRole.Base) # Normal background
+        color_degraded = QColor("#FFFACD") # Lemon Chiffon (Yellowish)
+        color_faulted = QColor("#FFA07A") # Light Salmon (Reddish)
+        color_offline = palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button) # Disabled color
+        color_resilvering = QColor("#ADD8E6") # Light Blue
+        color_scrubbing = QColor("#AFEEEE") # Pale Turquoise
+
+        if state_upper == 'ONLINE':
+            color = color_online
+        elif state_upper in ['DEGRADED']:
+            color = color_degraded
+        elif state_upper in ['FAULTED', 'UNAVAIL', 'REMOVED']:
+            color = color_faulted
+        elif state_upper == 'OFFLINE':
+            color = color_offline
+        elif 'resilver' in state.lower():
+            color = color_resilvering
+        elif 'scrub' in state.lower():
+            color = color_scrubbing
+        # Add more states if needed (e.g., UNAVAIL, REMOVED)
+
+        # Apply color to all columns of the row
+        if color is not None:
+             for c in range(self.pool_tree.columnCount()):
+                 item.setBackground(c, color)
+        else:
+             # Reset to default if state is unknown or has no specific color
+             for c in range(self.pool_tree.columnCount()):
+                 item.setBackground(c, color_online)
+
+
+    def _get_selected_item_data(self) -> Optional[Dict[str, Any]]:
+        """Gets data associated with the selected tree item."""
+        selected_items = self.pool_tree.selectedItems()
+        if not selected_items:
+            return None
+
+        item = selected_items[0]
+        data = {
+            'item': item,
+            'item_type': item.data(0, ITEM_TYPE_ROLE),
+            'vdev_type': item.data(0, VDEV_TYPE_ROLE),
+            'device_path': item.data(0, DEVICE_PATH_ROLE), # Might be None
+            'state': item.data(0, DEVICE_STATE_ROLE),
+            'text': item.text(0), # The displayed name/path
+            'parent_item': item.parent(),
+        }
+        return data
+
+    @Slot()
+    def _update_button_states(self):
+        """Enable/disable buttons based on tree selection and pool state."""
+        can_add = False
+        can_split = False
+        can_attach = False
+        can_detach = False
+        can_replace = False
+        can_offline = False
+        can_online = False
+        can_remove = False
+
+        # Get the top-level pool item AFTER parsing/setting the pool
+        pool_item = self.pool_tree.topLevelItem(0) if self.pool_tree.topLevelItemCount() > 0 else None
+
+        if self._current_pool and pool_item: # Ensure pool is loaded and parsed
+            pool_state = pool_item.data(0, DEVICE_STATE_ROLE) if pool_item else "UNKNOWN"
+            can_add = True # Allow adding VDEVs if pool is loaded
+
+            sel_data = self._get_selected_item_data()
+            if sel_data:
+                item = sel_data['item']
+                item_type = sel_data['item_type']
+                vdev_type = sel_data['vdev_type']
+                state = sel_data.get('state', 'UNKNOWN')
+                parent_item = sel_data['parent_item'] # This is the parent QTreeWidgetItem
+                device_path = sel_data['device_path'] # Actual path if identified as device/disk vdev
+                item_text = sel_data['text'] # The displayed text
+
+                state_upper = state.upper()
+
+                # Determine parent VDEV type if applicable
+                parent_vdev_type = parent_item.data(0, VDEV_TYPE_ROLE) if parent_item else None
+
+                is_device_in_vdev = (item_type == 'device')
+                is_disk_vdev = (item_type == 'vdev' and vdev_type == 'disk') # Single disk VDEV
+
+                # Attach: Can attach to a non-mirrored device/disk VDEV if ONLINE
+                if (is_device_in_vdev and parent_vdev_type not in ['mirror', 'log', 'cache', 'spare']) or is_disk_vdev:
+                    if state_upper == 'ONLINE':
+                        can_attach = True
+
+                # Detach: Can detach a device from a mirror if it has siblings and is ONLINE/DEGRADED?
+                if is_device_in_vdev and parent_vdev_type == 'mirror':
+                    if parent_item and parent_item.childCount() > 1: # Check if more than one device exists in mirror
+                       # Allow detach even if offline/faulted? ZFS might allow it. Let's be permissive.
+                       can_detach = True
+
+                # Replace: Can replace any identified device/disk VDEV
+                if device_path and (is_device_in_vdev or is_disk_vdev):
+                    can_replace = True
+
+                # Offline: Can offline an ONLINE device/disk VDEV
+                if device_path and (is_device_in_vdev or is_disk_vdev) and state_upper == 'ONLINE':
+                    can_offline = True
+
+                # Online: Can online an OFFLINE device/disk VDEV
+                if device_path and (is_device_in_vdev or is_disk_vdev) and state_upper == 'OFFLINE':
+                    can_online = True
+
+                # --- Remove Button Logic (Using Parent Check) ---
+                # Container types are just organizational nodes - can't remove them directly
+                # Only their children (actual devices/vdevs) can be removed
+                special_container_types = ['log', 'cache', 'spare', 'special', 'dedup']
+                
+                # Check if the selected item's PARENT is a special container (e.g., device inside logs)
+                parent_vdev_type = parent_item.data(0, VDEV_TYPE_ROLE) if parent_item else None
+                is_child_of_special_container = parent_vdev_type in special_container_types
+                
+                # Check if selected item is a top-level data VDEV (not a container)
+                is_top_level_vdev = ((item_type == 'vdev' or item_type == 'device') and parent_item == pool_item)
+                is_data_vdev = vdev_type not in special_container_types
+                
+                if is_child_of_special_container:
+                    # Items inside special containers can always be removed
+                    can_remove = True
+                elif is_top_level_vdev and is_data_vdev:
+                    # Data VDEVs (mirror, raidz, disk) - count how many exist
+                    data_vdev_count = 0
+                    for i in range(pool_item.childCount()):
+                        child = pool_item.child(i)
+                        child_type = child.data(0, ITEM_TYPE_ROLE)
+                        child_vdev_type = child.data(0, VDEV_TYPE_ROLE)
+                        # Check if child is a VDEV/Device and not a special container
+                        if (child_type == 'vdev' or child_type == 'device') and \
+                           child_vdev_type not in special_container_types:
+                            data_vdev_count += 1
+                    # Allow removal only if there's more than one data vdev
+                    if data_vdev_count > 1:
+                        can_remove = True
+                # --- End Remove Button Logic ---
+
+                # Split: Pool must be selected, healthy/degraded, and fully mirrored
+                if item_type == 'pool': # and pool_state in ['ONLINE', 'DEGRADED']:
+                    is_fully_mirrored = False
+                    has_data_vdev = False
+                    if pool_item and pool_item.childCount() > 0:
+                        is_fully_mirrored = True # Assume true initially
+                        for i in range(pool_item.childCount()):
+                            top_vdev = pool_item.child(i)
+                            # Only check VDEVs directly under the pool
+                            if top_vdev.data(0, ITEM_TYPE_ROLE) == 'vdev':
+                                top_vdev_type = top_vdev.data(0, VDEV_TYPE_ROLE)
+                                # Ignore non-data vdevs for split requirement
+                                if top_vdev_type not in ['log', 'cache', 'spare', 'special', 'dedup']:
+                                    has_data_vdev = True
+                                    # Count devices within this top-level VDEV
+                                    device_count = 0
+                                    for j in range(top_vdev.childCount()):
+                                        if top_vdev.child(j).data(0, ITEM_TYPE_ROLE) == 'device':
+                                            device_count += 1
+                                    # A data VDEV must be a mirror with exactly 2 devices for split
+                                    # (ZFS might support >2, but basic split usually targets 2)
+                                    # Let's relax to >= 2 devices for now
+                                    if top_vdev_type != 'mirror' or device_count < 2:
+                                        is_fully_mirrored = False
+                                        break # Not fully mirrored
+                        if not has_data_vdev: # Need at least one data vdev
+                            is_fully_mirrored = False
+                    can_split = is_fully_mirrored
+
+
+        # Set button states
+        self.attach_button.setEnabled(can_attach)
+        self.detach_button.setEnabled(can_detach)
+        self.replace_button.setEnabled(can_replace)
+        self.offline_button.setEnabled(can_offline)
+        self.online_button.setEnabled(can_online)
+        self.add_vdev_button.setEnabled(can_add)
+        self.remove_vdev_button.setEnabled(can_remove)
+        self.split_button.setEnabled(can_split)
+
+
+    # --- Action Methods ---
+
+    def _select_device_dialog(self, title: str, message: str) -> Optional[str]:
+        """Shows a dialog to select an available block device."""
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setLayout(QVBoxLayout())
+        
+        dialog.layout().addWidget(QLabel(message))
+        
+        combo = QComboBox()
+        dialog.layout().addWidget(combo)
+        
+        show_all_check = QCheckBox("Show All Devices")
+        dialog.layout().addWidget(show_all_check)
+        
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        dialog.layout().addWidget(button_box)
+        
+        safe_devices = []
+        all_devices = []
+        device_map = {} # Maps display name -> path
+        
+        def _populate_combo():
+            combo.clear()
+            source = all_devices if show_all_check.isChecked() else safe_devices
+            
+            if not source:
+                 combo.addItem("No available devices found", None)
+                 combo.setEnabled(False)
+                 return
+
+            combo.setEnabled(True)
+            device_map.clear()
+            
+            # Sort source by display name
+            sorted_devs = sorted(source, key=lambda d: d.get('display_name', d['name']))
+            
+            for dev in sorted_devs:
+                name = dev['name']
+                display = dev.get('display_name', name)
+                device_map[display] = name
+                combo.addItem(display, name)
+        
+        show_all_check.toggled.connect(_populate_combo)
+
+        try:
+            result = self.zfs_client.list_block_devices()
+            if result.get('error'):
+                 QMessageBox.critical(self, "Error Listing Devices", f"Could not fetch block devices: {result['error']}")
+                 return None
+            
+            safe_devices = result.get('devices', [])
+            all_devices = result.get('all_devices', [])
+            _populate_combo()
+            
+        except (ZfsCommandError, ZfsClientCommunicationError, TimeoutError) as e:
+            QMessageBox.critical(self, "Error Listing Devices", f"Could not fetch block devices: {e}")
+            return None
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Unexpected error listing block devices: {e}")
+            return None
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return combo.currentData()
+        return None
+
+    @Slot()
+    def _attach_device(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data: return
+
+        existing_device = sel_data['device_path'] # This should be the actual path now
+        if not existing_device:
+             # linux-only: '/dev/sdx' is a Linux block device naming convention; other OSes may use different naming
+             QMessageBox.warning(self, "Invalid Selection", "Select the specific disk device you want to attach another device to (e.g., /dev/sdx).")
+             return
+
+        new_device = self._select_device_dialog("Select Device to Attach",
+                                               f"Select the new device to attach as a mirror to:\n'{existing_device}'")
+        if new_device:
+            reply = QMessageBox.question(self, "Confirm Attach",
+                                         f"Attach '{new_device}' as a mirror to '{existing_device}' in pool '{self._current_pool.name}'?",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+            if reply == QMessageBox.StandardButton.Yes:
+                self.status_message.emit(f"Requesting attach {new_device} to {existing_device}...")
+                # Emit signal with pool name, existing device path, new device path
+                self.attach_device_requested.emit(self._current_pool.name, existing_device, new_device)
+
+    @Slot()
+    def _detach_device(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data or sel_data['item_type'] != 'device' or not sel_data['parent_item'] or sel_data['parent_item'].data(0, VDEV_TYPE_ROLE) != 'mirror':
+            QMessageBox.warning(self, "Invalid Selection", "Select a device within a mirror VDEV to detach.")
+            return
+
+        device_to_detach = sel_data['device_path'] # Use the actual path
+        if not device_to_detach:
+             QMessageBox.warning(self, "Error", "Could not determine the device path to detach.")
+             return
+
+        reply = QMessageBox.question(self, "Confirm Detach",
+                                     f"Detach device '{device_to_detach}' from its mirror in pool '{self._current_pool.name}'?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.status_message.emit(f"Requesting detach of {device_to_detach}...")
+            self.detach_device_requested.emit(self._current_pool.name, device_to_detach)
+
+    @Slot()
+    def _replace_device(self):
+        # NOTE: Frontend logic appears correct. If action fails, check backend/permissions.
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data or not sel_data['device_path']:
+            QMessageBox.warning(self, "Invalid Selection", "Select the specific disk device you want to replace.")
+            return
+
+        old_device = sel_data['device_path'] # Use the actual path
+
+        # --- Use custom dialog to allow "mark only" ---
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Replacement Device")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(f"Select the new device to replace:\n'{old_device}'"))
+        combo = QComboBox()
+        combo.addItem("<Mark for replacement only (no new device)>", "") # Use empty string for 'mark only'
+        
+        replace_show_all_check = QCheckBox("Show All Devices")
+        
+        safe_devices = []
+        all_devices = []
+        
+        def _populate_replace_combo():
+            current_data = combo.currentData()
+            combo.clear()
+            combo.addItem("<Mark for replacement only (no new device)>", "")
+            
+            source = all_devices if replace_show_all_check.isChecked() else safe_devices
+            
+            sorted_devs = sorted(source, key=lambda d: d.get('display_name', d['name']))
+            
+            for dev in sorted_devs:
+                 display = dev.get('display_name', dev['name'])
+                 combo.addItem(display, dev['name'])
+            
+            # restore selection if possible
+            if current_data:
+                 idx = combo.findData(current_data)
+                 if idx >= 0: combo.setCurrentIndex(idx)
+
+        replace_show_all_check.toggled.connect(_populate_replace_combo)
+        
+        try:
+            result = self.zfs_client.list_block_devices()
+            if not result.get('error'):
+                safe_devices = result.get('devices', [])
+                all_devices = result.get('all_devices', [])
+                _populate_replace_combo()
+        except Exception as e:
+            QMessageBox.warning(dialog, "Device List Error", f"Could not list available devices: {e}")
+
+        layout.addWidget(combo)
+        layout.addWidget(replace_show_all_check) # Add checkbox
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        selected_new_device_path = None # Default to None (cancel)
+        if dialog.exec():
+            selected_new_device_path = combo.currentData() # Get the stored path or empty string
+
+        # Now selected_new_device_path is either None (cancelled), "" (mark only), or a device path
+
+        if selected_new_device_path is None: # User cancelled dialog
+            self.status_message.emit("Replace cancelled.")
+            return
+
+        confirm_msg = f"Replace device '{old_device}'"
+        if selected_new_device_path: # Path selected
+            confirm_msg += f" with '{selected_new_device_path}'"
+        else: # Empty string means mark only
+            confirm_msg += " (mark for replacement only)"
+        confirm_msg += f" in pool '{self._current_pool.name}'?"
+        # --- End of modified dialog interaction ---
+
+        reply = QMessageBox.question(self, "Confirm Replace", confirm_msg,
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.status_message.emit(f"Requesting replacement for {old_device}...")
+            self.replace_device_requested.emit(self._current_pool.name, old_device, selected_new_device_path) # Pass path or ""
+
+    @Slot()
+    def _offline_device(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data or not sel_data['device_path']:
+            QMessageBox.warning(self, "Invalid Selection", "Select the specific disk device to take offline.")
+            return
+
+        device = sel_data['device_path']
+
+        # Single three-button dialog: Temporarily / Permanently / Cancel
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Offline Device")
+        msg_box.setText(f"Take device '{device}' offline in pool '{self._current_pool.name}'?")
+        msg_box.setInformativeText(
+            "<b>Temporarily</b> = May come back online after reboot<br>"
+            "<b>Permanently</b> = Stays offline until manually brought online"
+        )
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        
+        temporarily_btn = msg_box.addButton("Temporarily", QMessageBox.ButtonRole.AcceptRole)
+        permanently_btn = msg_box.addButton("Permanently", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg_box.addButton(QMessageBox.StandardButton.Cancel)
+        msg_box.setDefaultButton(temporarily_btn)
+        
+        msg_box.exec()
+        clicked = msg_box.clickedButton()
+        
+        if clicked == cancel_btn:
+            return  # User cancelled
+        
+        temporary = (clicked == temporarily_btn)
+        self.status_message.emit(f"Requesting offline for {device} ({'temporary' if temporary else 'permanent'})...")
+        self.offline_device_requested.emit(self._current_pool.name, device, temporary)
+
+    @Slot()
+    def _online_device(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data or not sel_data['device_path']:
+            QMessageBox.warning(self, "Invalid Selection", "Select the specific disk device to bring online.")
+            return
+
+        device = sel_data['device_path']
+
+        # Single three-button dialog: Expand / Don't Expand / Cancel
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Online Device")
+        msg_box.setText(f"Bring device '{device}' online in pool '{self._current_pool.name}'?")
+        msg_box.setInformativeText(
+            "<b>Expand</b> = Attempt to expand pool capacity if device is larger<br>"
+            "<b>Don't Expand</b> = Just bring online without expansion"
+        )
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        
+        expand_btn = msg_box.addButton("Yes, Expand", QMessageBox.ButtonRole.AcceptRole)
+        no_expand_btn = msg_box.addButton("Don't Expand", QMessageBox.ButtonRole.ActionRole)
+        cancel_btn = msg_box.addButton(QMessageBox.StandardButton.Cancel)
+        msg_box.setDefaultButton(no_expand_btn)
+        
+        msg_box.exec()
+        clicked = msg_box.clickedButton()
+        
+        if clicked == cancel_btn:
+            return  # User cancelled
+        
+        expand = (clicked == expand_btn)
+        self.status_message.emit(f"Requesting online for {device}{' (with expansion)' if expand else ''}...")
+        self.online_device_requested.emit(self._current_pool.name, device, expand)
+
+    @Slot()
+    def _add_vdev(self):
+        """Open dialog to add VDEVs using the shared VdevConfigWidget."""
+        if not self._current_pool:
+            return
+
+        from widgets.vdev_config_widget import show_vdev_config_dialog
+
+        result = show_vdev_config_dialog(
+            parent=self,
+            zfs_client=self.zfs_client,
+            mode='add_vdev',
+            pool_name=self._current_pool.name
+        )
+
+        if result:
+            pool_name, vdev_specs, force = result
+            if vdev_specs:
+                self.status_message.emit(f"Requesting to add VDEVs to pool {pool_name}...")
+                self.add_vdev_requested.emit(pool_name, vdev_specs, force)
+
+
+
+    @Slot()
+    def _remove_vdev(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data:
+             QMessageBox.warning(self, "Invalid Selection", "Please select an item to remove.")
+             return
+
+        # --- Use the same identification logic as _update_button_states (Updated for Stripe Disks) ---
+        item = sel_data['item']
+        item_type = sel_data['item_type']
+        parent_item = sel_data['parent_item']
+        pool_item = self.pool_tree.topLevelItem(0) if self.pool_tree.topLevelItemCount() > 0 else None
+
+        is_top_level_vdev = ((item_type == 'vdev' or item_type == 'device') and parent_item == pool_item)
+        # --- End Check ---
+
+        if not is_top_level_vdev:
+            QMessageBox.warning(self, "Invalid Selection", "Select a top-level VDEV (e.g., mirror-0, raidz1-0, logs, cache, spare, or a single disk entry directly under the pool) to remove.")
+            return
+
+        vdev_type = sel_data['vdev_type']
+        vdev_id_or_device = sel_data['text'] # Default to displayed text
+
+        if vdev_type in ['log', 'cache', 'spare']:
+            device_list = sel_data['item'].data(0, VDEV_DEVICES_ROLE) or []
+            if device_list:
+                vdev_id_or_device = device_list[0] # Use the first device path for removal
+            else:
+                QMessageBox.warning(self, "Error", f"Could not find associated devices for VDEV '{sel_data['text']}'. Cannot remove.")
+                return
+        elif vdev_type == 'disk' and sel_data['device_path']:
+            vdev_id_or_device = sel_data['device_path'] # Use actual path for single disk vdevs
+
+        reply = QMessageBox.warning(self, "Confirm Remove",
+                                     f"WARNING: Removing VDEVs can be dangerous and may be irreversible or cause data loss, especially for data VDEVs.\n\n"
+                                     f"Are you sure you want to attempt to remove '{vdev_id_or_device}' from pool '{self._current_pool.name}'?\n\n"
+                                     f"(Check 'zpool remove' documentation for limitations.)",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.status_message.emit(f"Requesting removal of {vdev_id_or_device}...")
+            self.remove_vdev_requested.emit(self._current_pool.name, vdev_id_or_device)
+
+    @Slot()
+    def _split_pool(self):
+        if not self._current_pool: return
+        sel_data = self._get_selected_item_data()
+        if not sel_data or sel_data['item_type'] != 'pool':
+             QMessageBox.warning(self, "Invalid Selection", "Please select the top-level pool item to initiate the split operation.")
+             return
+
+        new_pool_name, ok = QInputDialog.getText(self, "Split Pool",
+                                                 f"Enter the name for the new pool to be created by splitting:\n'{self._current_pool.name}'\n\n"
+                                                 f"(The new pool will contain the second disk of each mirror).",
+                                                 QLineEdit.EchoMode.Normal)
+        if ok and new_pool_name:
+             new_pool_name = new_pool_name.strip()
+             if not new_pool_name or new_pool_name == self._current_pool.name:
+                  QMessageBox.warning(self, "Invalid Name", "New pool name cannot be empty or the same as the original.")
+                  return
+             # Simple validation for pool name characters
+             if not re.match(r'^[a-zA-Z][a-zA-Z0-9_\-:.%]*$', new_pool_name):
+                  QMessageBox.warning(self, "Invalid Name", "New pool name must start with a letter and contain only letters, numbers, or: _ - : . %")
+                  return
+
+             reply = QMessageBox.question(self, "Confirm Split",
+                                         f"Split pool '{self._current_pool.name}', creating a new pool '{new_pool_name}'?\n"
+                                         f"(This detaches the second device of each top-level mirror.)",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+             if reply == QMessageBox.StandardButton.Yes:
+                 self.status_message.emit(f"Requesting split of {self._current_pool.name} into {new_pool_name}...")
+                 split_options = {} # Add UI for split options if needed later
+                 self.split_pool_requested.emit(self._current_pool.name, new_pool_name, split_options)
+
+
+# --- END OF FILE widgets/pool_editor_widget.py ---

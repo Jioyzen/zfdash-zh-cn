@@ -1,0 +1,223 @@
+# ZfDash Changelog #always use same format
+## v2.0.1
+*   **Fix:** Docker: SSH password backup no longer fails with "ssh not found" (paramiko doesn't need ssh binary).
+*   **Fix:** Docker: Added `openssh-client` to image and `~/.ssh` volume mount for SSH key-based backup.
+*   **Fix:** Backup error messages are now scrollable to prevent overflow on smaller screens.
+
+## v2.0.0-beta
+*   **Feature: Backup & Replication** - Full backup system with multiple destination types.
+*   **Feature:** Agent-to-Agent backup with TLS-secured data channel and resume support.
+*   **Feature:** Local replication (ZFS send/receive on the same host).
+*   **Feature:** SSH backup with password and key-based authentication via Paramiko.
+*   **Feature:** File export backup (ZFS send to file).
+*   **Feature:** Backup job tracking with status, cancel, delete, and resume capabilities.
+*   **Feature:** Automatic incremental base detection via snapshot GUID matching.
+*   **Feature:** Streaming timeout detection (300s) for dead sender/receiver recovery.
+*   **Feature:** Manual resume token fetch for failed transfers.
+*   **Feature:** Password vault - securely store agent credentials with auto-lock on logout.
+*   **Feature:** Vault status indicator in Control Center with lock/unlock controls.
+*   **Feature:** Quick Switch submenu for fast agent switching from navbar.
+*   **Feature:** Snapshot tab "Backup..." button redirects to backup page with pre-selected source.
+*   **Feature:** New "Tools" menu with Backup and Control Center links.
+*   **Improvement:** Unified BackupTreeView component for consistent source selection.
+*   **Improvement:** Backup page with tabbed UI (Agent, A2A, Local, File, SSH, Jobs).
+*   **Fix:** Agent install service now creates zfdash home directory to prevent permission errors.
+*   **Fix:** Sender jobs no longer get stuck in "streaming" when receiver fails.
+*   **Fix:** SSH incremental base detection with proper PATH and paramiko usage.
+
+## v1.9.6-beta
+*   **New: Agent Mode** - Manage ZFS on remote hosts from a single Control Center.
+*   **Feature:** Network discovery - automatically find ZFS agents on your network.
+*   **Feature:** TLS encryption with STARTTLS negotiation for secure remote connections.
+*   **Feature:** Control Center UI - add, connect, edit, and manage remote agents.
+*   **Feature:** Bulk agent import - discover and add multiple agents at once.
+*   **Improvement:** Navbar connection indicator shows active remote agent status.
+*   **Improvement:** Made cryptography library optional (falls back to OpenSSL CLI).
+*   **Improvement:** Pre-warm SSL context to prevent first-connection failures.
+*   **Improvement:** Graceful daemon shutdown via terminal (q/quit commands).
+*   **Fix:** Connection status uses single source of truth for proper disconnect detection.
+*   **Fix:** Removing an agent now clears its trusted certificate.
+*   **General:** Minor improvements and bug fixes.
+
+## v1.9.3-beta
+*   **Critical Fix:** GUI/WebUI: Special VDEVs (logs, cache, spare, special, dedup) now correctly appear in pool tree view. Previously these were missing due to JSON/text parsing issues.
+*   **Fix:** GUI/WebUI: Remove VDEV button no longer activates on container nodes (logs, spares, etc.) - only on actual removable devices within them.
+*   **Fix:** JSON parser now correctly handles `l2cache` key (ZFS uses this instead of `cache` internally).
+*   **Fix:** Legacy text parser now correctly parses special vdev containers that appear at pool root indentation level.
+*   **Improvement:** Parser includes `dedup` vdev support for both JSON and legacy modes.
+*   **Improvement:** Docker: Added `/run/udev` mount for better device detection.
+
+## v1.9.2-beta
+*   **Feature:** GUI/WebUI: Support for special VDEVs (TrueNAS Fusion Pools) - create metadata vdevs for improved performance.
+*   **Feature:** GUI/WebUI: Contextual help system - get helpful tips and explanations for VDEV types right in the Create Pool and Add VDEV dialogs.
+*   **Feature:** WebUI: Rich modal dialogs - replaced basic browser alerts with professional Bootstrap modals for better user experience.
+*   **Feature:** GUI/WebUI: Three-button confirmations for critical operations (Offline/Online) - Cancel/No/Yes options prevent accidental actions.
+*   **Improvement:** Robust pool status parsing - uses modern JSON format (zpool status -j) with automatic fallback for older ZFS versions.
+*   **Improvement:** GUI: Unified pool creation and VDEV management interface - same intuitive layout for creating pools and adding VDEVs.
+*   **Improvement:** GUI: Click the trash icon next to any VDEV to quickly remove it.
+*   **Improvement:** GUI/WebUI: Clearer instructions with visual cues (→ arrows and 🗑 trash icons) to guide you through VDEV configuration.
+*   **Improvement:** GUI: More consistent and polished appearance throughout VDEV dialogs.
+*   **Improvement:** WebUI: Streamlined pool creation and VDEV management with less clutter and better visual flow.
+*   **Fix:** GUI: Error messages now appear centered on the window instead of randomly in the corner.
+*   **Fix:** GUI: Keyboard input now works correctly when app is built on Ubuntu and run on Fedora (or other distributions).
+*   **Fix:** GUI: Import pool dialog now works properly.
+
+## v1.9.0-beta
+*   **Feature:** GUI/WebUI: Added checkboxes to show all block devices (disable safety filters for advanced users).
+*   **Feature:** WebUI: Improved adding VDEV types with better UI controls.
+*   **Feature:** Cross-platform block device listing for Linux, macOS, and FreeBSD.
+*   **Feature:** Privilege escalation fallbacks with improved sudo support for pipe mode.
+*   **Feature:** Docker: Added Docker support for Linux arm64 and x86_64.
+*   **Improvement:** Experimental support for macOS and FreeBSD when running from source with uv.
+*   **Improvement:** Better sudo prompts on FreeBSD/macOS with proper terminal settings restoration.
+*   **Fix:** Block device filter fix for macOS compatibility.
+*   **Fix:** Socket mode fallback when pkexec authentication fails.
+*   **Fix:** Reader thread join handling for platform block devices.
+*   **Fix:** Attempted fix for harmless segmentation fault at exit when built with GitHub runner.
+
+## v1.8.10-beta
+*   **Improvement** Better signal handling and cleanup to prevent zombie processes.
+*   **Improvement** New improved installation scripts (install.sh and uninstall.sh) that handle upgrades and user data correctly.
+*   **Fix** Fixed shutdown logic for standalone daemon connections.
+
+## v1.8.9-Beta
+*   **Feature** Added `get-zfdash.sh` for automated one-line installation/update.
+*   **Fix** Resolved SSL certificate verification errors by integrating `certifi`.
+*   **Fix** Fixed dependency resolution on FreeBSD (excluded PySide6 correctly).
+*   **Fix** Fixed GitHub Actions ARM builds by adjusting PySide6 version constraints.
+
+## v1.8.8-Beta
+*   **Refractor** Migrate from Conda to uv for simpler build, manual run and maintain dependencies (#9)
+*   **Fix** fix treeview does not scroll vertically (#14)
+
+## v1.8.7-Beta
+*   **Web UI:** Improved Web UI visuals
+*   **Feature** Improved treeview selection.
+*   **Feature** Add default dashboard tab with infos about the selected item
+*   **Feature** Add zpool list -v and zpool iostat -v output to Pool Health Tab
+*   **Feature** Centralize app info and version, implement help menu and about dialog + update check
+*   **Refractor** Refractor app.js into easy-to-maintain modules
+*   **Refractor** Refractor style.css into modules
+
+## v1.8.4-Beta
+*   **Feature** Add Socket-Mode for daemon<>client communication with an IPC abstraction layer.
+*   **Feature** Cross Platform runtime_dir and escalation (No hard blockers for Freebsd and macOS testing)
+*   **Fixes and improvements** Code refractors, improvements and bugfixes
+
+## v1.8.0-Beta Privileged Container, Auto Snapshot Properties, Feedback
+
+*   **Feature** Added Docker Containerized privileged version of ZfDash
+*   **Feature** Added Auto Snapshot Properties for datasets
+
+## v1.7.6-Beta initial release
+
+*   **Fix:** Fixed Change Password in the Web UI.
+
+
+## v1.7.5-Beta initial release
+
+*   **Web UI:** Improved visual appearance of the Web UI.
+*   **Web UI:** Added a dedicated, styled login page (`login.html`).
+
+## v1.7.3-Beta (not released)
+
+*   **Security:** Improved password checking security (timing resistance).
+*   **Security:** Reduced potential security risks by ensuring the web service user is only added to the dedicated `zfdash` group, not general admin groups like `sudo` or `wheel`.
+
+## v1.7.2-Beta (not released)
+
+*   **GUI:** The GUI now waits properly for the background daemon to start before proceeding.
+*   **Fix:** Resolved an issue where snapshots wouldn't refresh correctly in the UI.
+*   **Fix:** Fixed `zpool scrub` start/stop functionality.
+*   **Install:** Added a script (`install_web_service.sh`) to install the Web UI as a systemd service for persistent running.
+*   **Install:** Updated the main installation script (`install.sh`).
+
+## v1.7.1-Beta (not released)
+
+*   **Security:** Implemented strong password hashing (PBKDF2 with unique salt per user).
+*   **Web UI:** Password changes are now handled securely by the background root daemon. The credentials file (`credentials.json`) is owned by root.
+*   **Web UI:** If the credentials file is missing at startup, the daemon creates one with default credentials (`admin`/`admin`) - **CHANGE THESE IMMEDIATELY!**
+
+## v1.7.0-Beta (not released)
+
+*   **Security:** Reworked communication between the UI (GUI/Web) and the background daemon. Now uses secure kernel-level pipes instead of a user-owned socket file, preventing other user processes from potentially interacting with the daemon.
+
+## v1.5.6-Beta (not released)
+
+*   **Web UI:** Implemented user login functionality. Usernames and hashed passwords are stored in `credentials.json` (location varies depending on installation method).
+
+## v1.5.5-Beta (not released)
+
+*   **GUI:** Fixed the "Name" column in tables being too narrow.
+*   **GUI:** Made table columns resizable.
+
+## v1.5.4-Beta (not released)
+
+*   **Web UI:** Removed extra whitespace at the top of the Web UI page.
+*   **Install:** Updated installation scripts.
+*   **Internal:** Improved separation between GUI and Web UI code.
+
+## v1.5.3-Alpha (not released)
+
+*   **Web UI:** Now uses the `waitress` production server instead of the Flask development server for better performance and stability.
+
+## v1.5.2-Alpha (not released)
+
+*   **Web UI:** Fixed the Mount/Unmount menu buttons being incorrectly disabled for root datasets.
+*   **GUI:** The GUI Runner now provides a more informative error message if the required Polkit policy file is missing.
+
+## v1.5.1-Alpha (not released)
+
+*   **Fix:** General bug fixes.
+
+## v1.5.0-Alpha (not released)
+
+*   **Feature:** Added the initial **Web UI** for remote/headless management.
+*   **Internal:** Introduced `gui_runner.py` to handle UI startup logic.
+*   **Internal:** Unified the application entry point to `main.py` with command-line arguments (`--web`, `--daemon`, etc.).
+
+## v1.4.4-Beta (not released)
+
+*   **Fix:** Corrected enable/disable logic for the `zpool scrub` start/stop menu options.
+*   **Internal:** Refactored backend logic for better structure.
+
+## v1.4.3-Beta (not released)
+
+*   **GUI:** Fixed the "Replace Device" functionality in the Pool Editor.
+*   **GUI:** Fixed the "Remove VDEV/Device" button in the Pool Editor sometimes being incorrectly disabled.
+
+## v1.4.2-Beta (not released)
+
+*   **Feature:** Improved ZFS encryption management options in the "Create Dataset" dialog and the "Encryption" tab.
+*   **Fix:** Addressed various bugs related to encryption and pool editing.
+
+## v1.3.0-Alpha (not released)
+
+*   **Feature:** Added basic ZFS encryption support:
+    *   Option to create encrypted datasets.
+    *   New "Encryption" tab to view status and manage keys (load, unload, change key/passphrase, change location).
+*   **Feature:** Added "Rename Dataset/Volume" functionality.
+*   **Feature:** Added a Log Viewer dialog with an option to enable/disable command logging to a file (`/run/user/<UID>/zfdash`).
+
+## v1.2.0-Alpha (not released)
+
+*   **Feature:** Implemented Pool Import functionality (search for importable pools, import specific pools, import all).
+*   **Feature:** Added "Force" option to "Create Pool" and "Add VDEV" dialogs.
+
+## v1.1.0-Alpha (not released)
+
+*   **Feature:** Added Pool Editor tab to manage pool devices (attach, detach, etc.).
+*   **Feature:** Improved "Create Pool" dialog to support multiple VDEVs (mirrors, raidz, etc.).
+*   **GUI:** Refreshing the view now remembers the previously selected tab and tree item.
+*   **Fix:** General bug fixes.
+
+## v1.0.0-Alpha (not released)
+
+*   **Initial:**
+    *   Basic GUI structure with tree view.
+    *   View pool status.
+    *   Create and destroy pools (basic VDEVs).
+    *   Import and export pools.
+    *   View and edit pool properties.
+    *   Create and destroy datasets/volumes.
+    *   Create and restore snapshots.

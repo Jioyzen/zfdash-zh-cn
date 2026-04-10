@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="height: 100%;">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>控制中心 - ZfDash Web 界面</title>
+  <link rel="icon" type="image/png" href="/favicon.ico">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .agent-card {
+      transition: all 0.2s ease;
+      border-left: 4px solid transparent;
+    }
+
+    .agent-card:hover {
+      box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.075);
+    }
+
+    .agent-card.connected {
+      border-left-color: #198754;
+    }
+
+    .agent-card.active {
+      border-left-color: #0d6efd;
+      background-color: #f8f9fa;
+    }
+
+    .status-badge {
+      min-width: 90px;
+    }
+
+    /* Vault Status Card Styles */
+    #vault-status-card {
+      transition: all 0.3s ease;
+      background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    }
+
+    #vault-status-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+    }
+
+    .vault-icon-wrapper {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    /* Vault States */
+    #vault-status-card.vault-unlocked {
+      background: linear-gradient(135deg, #d1e7dd 0%, #f8f9fa 100%);
+    }
+
+    #vault-status-card.vault-unlocked .vault-icon-wrapper {
+      background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+      color: white;
+    }
+
+    #vault-status-card.vault-locked {
+      background: linear-gradient(135deg, #fff3cd 0%, #f8f9fa 100%);
+    }
+
+    #vault-status-card.vault-locked .vault-icon-wrapper {
+      background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+      color: white;
+    }
+
+    #vault-status-card.vault-unavailable {
+      background: linear-gradient(135deg, #e9ecef 0%, #f8f9fa 100%);
+    }
+
+    #vault-status-card.vault-unavailable .vault-icon-wrapper {
+      background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);
+      color: white;
+    }
+
+    #vault-action-btn {
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    #vault-action-btn.btn-lock {
+      background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+      border: none;
+      color: white;
+    }
+
+    #vault-action-btn.btn-unlock {
+      background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+      border: none;
+      color: white;
+    }
+
+    #vault-action-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+  </style>
+</head>
+
+<body class="d-flex flex-column" style="height: 100vh;">
+
+  <!-- Navigation Bar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark flex-shrink-0">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">
+        <i class="bi bi-hdd-stack-fill"></i> ZfDash
+      </a>
+      <div class="ms-auto d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+          data-bs-target="#agentHelpModal">
+          <i class="bi bi-question-circle"></i> 如何运行代理
+        </button>
+        <a href="/" class="btn btn-sm btn-outline-light">
+          <i class="bi bi-arrow-left"></i> 返回仪表板
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="container-fluid flex-grow-1 overflow-auto py-4">
+    <div class="row mb-4">
+      <div class="col">
+        <h2><i class="bi bi-hdd-network me-2"></i>控制中心</h2>
+        <p class="text-muted">管理网络中远程 ZFS 守护进程的连接。</p>
+      </div>
+    </div>
+
+    <!-- Current Mode Indicator -->
+    <div class="row mb-3">
+      <div class="col-md-8">
+        <div class="alert alert-info d-flex align-items-center mb-0">
+          <i class="bi bi-info-circle me-2"></i>
+          <span>当前模式: <strong id="current-mode-text">本地守护进程</strong></span>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <!-- Vault Status Card -->
+        <div class="card h-100 border-0 shadow-sm" id="vault-status-card">
+          <div class="card-body d-flex align-items-center justify-content-between py-2 px-3">
+            <div class="d-flex align-items-center">
+              <div class="vault-icon-wrapper me-3" id="vault-icon-wrapper">
+                <i class="bi bi-safe2 fs-4" id="vault-icon"></i>
+              </div>
+              <div>
+                <div class="fw-semibold small" id="vault-status-text">检查中...</div>
+                <div class="text-muted small" id="vault-status-detail">凭据保险库</div>
+              </div>
+            </div>
+            <button class="btn btn-sm" id="vault-action-btn" style="display: none;">
+              <i class="bi bi-lock"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Agent Form -->
+    <div class="row mb-4">
+      <div class="col">
+        <div class="card">
+          <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>添加远程代理</h5>
+          </div>
+          <div class="card-body">
+            <form id="add-agent-form" class="row g-3">
+              <div class="col-md-3">
+                <label for="agent-alias" class="form-label">别名</label>
+                <input type="text" class="form-control" id="agent-alias" placeholder="my-server" required>
+              </div>
+              <div class="col-md-3">
+                <label for="agent-host" class="form-label">主机</label>
+                <input type="text" class="form-control" id="agent-host" placeholder="192.168.1.100" required>
+              </div>
+              <div class="col-md-2">
+                <label for="agent-port" class="form-label">端口</label>
+                <input type="number" class="form-control" id="agent-port" value="5555" required>
+              </div>
+              <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check mb-2">
+                  <input type="checkbox" class="form-check-input" id="agent-use-tls" checked>
+                  <label class="form-check-label" for="agent-use-tls">
+                    <i class="bi bi-shield-lock"></i> 使用 TLS
+                  </label>
+                </div>
+              </div>
+              <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                  <i class="bi bi-plus-lg"></i> 添加
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="discover-btn"
+                  title="在网络上发现代理">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agents List -->
+    <div class="row">
+      <div class="col">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-server me-2"></i>远程代理</h5>
+          </div>
+          <div class="card-body">
+            <div id="agents-list">
+              <!-- Agent cards will be inserted here by JavaScript -->
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-inbox display-1"></i>
+                <p class="mt-3">尚未配置远程代理。</p>
+                <p class="small">在上方添加远程代理以开始使用。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Local Daemon Card (always shown) -->
+    <div class="row mt-3">
+      <div class="col">
+        <div class="card agent-card" id="local-daemon-card">
+          <div class="card-body">
+            <div class="row align-items-center">
+              <div class="col-md-4">
+                <h5 class="mb-1"><i class="bi bi-house-fill me-2"></i>本地守护进程</h5>
+                <small class="text-muted">默认连接</small>
+              </div>
+              <div class="col-md-4 text-center">
+                <span class="badge bg-success status-badge">本地</span>
+              </div>
+              <div class="col-md-4 text-end">
+                <button class="btn btn-primary btn-sm" id="switch-local-btn">
+                  <i class="bi bi-arrow-left-right"></i> 切换到本地
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Password Modal -->
+  <div class="modal fade" id="passwordModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-key me-2"></i>输入密码
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>请输入 <strong id="password-agent-name"></strong> 的管理员密码:</p>
+          <form id="password-form">
+            <div class="mb-3">
+              <label for="agent-password" class="form-label">密码</label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="agent-password" required autofocus>
+                <span class="input-group-text text-success" id="password-saved-indicator" style="display: none;"
+                  title="已从保险库加载">
+                  <i class="bi bi-key-fill"></i>
+                </span>
+              </div>
+            </div>
+            <div class="form-check mb-2" id="save-password-group">
+              <input type="checkbox" class="form-check-input" id="save-password-checkbox">
+              <label class="form-check-label small" for="save-password-checkbox">
+                <i class="bi bi-safe"></i> 保存密码到保险库
+              </label>
+            </div>
+          </form>
+          <div id="password-status" class="alert alert-info align-items-center" style="display: none;">
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            正在连接到代理...
+          </div>
+          <div id="password-error" class="alert alert-danger" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="password-submit-btn">
+            连接
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Discovery Modal -->
+  <div class="modal fade" id="discoveryModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-broadcast me-2"></i>发现代理
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Discovery Status -->
+          <div class="d-flex gap-3 mb-3 small text-muted">
+            <span><i class="bi bi-broadcast"></i> mDNS: <span id="mdns-status">检查中...</span></span>
+            <span><i class="bi bi-wifi"></i> UDP 广播: <span class="text-success">始终启用</span></span>
+          </div>
+
+          <!-- Scanning Indicator -->
+          <div id="discovery-scanning" class="text-center py-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 mb-0">正在扫描网络...</p>
+          </div>
+
+          <!-- Discovery Results -->
+          <div id="discovery-results" style="display: none;">
+            <!-- Select All Header -->
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="select-all-agents">
+                <label class="form-check-label fw-bold" for="select-all-agents">全选</label>
+              </div>
+              <small class="text-muted">已选择 <span id="selected-count">0</span> 个</small>
+            </div>
+            <div id="discovered-agents-list">
+              <!-- Agent cards inserted here by JavaScript -->
+            </div>
+          </div>
+
+          <!-- No Results -->
+          <div id="discovery-empty" class="text-center text-muted py-4" style="display: none;">
+            <i class="bi bi-inbox display-4"></i>
+            <p class="mt-2 mb-0">网络上未发现代理。</p>
+            <p class="small">请确保代理正在运行且可访问。</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-success me-auto" id="add-selected-btn" disabled>
+            <i class="bi bi-plus-lg"></i> 添加选中项 (<span id="add-selected-count">0</span>)
+          </button>
+          <button type="button" class="btn btn-outline-primary" id="rescan-btn">
+            <i class="bi bi-arrow-clockwise"></i> 重新扫描
+          </button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Agent Modal -->
+  <div class="modal fade" id="editAgentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-pencil me-2"></i>编辑代理
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="edit-agent-form">
+            <input type="hidden" id="edit-old-alias">
+            <div class="mb-3">
+              <label for="edit-alias" class="form-label">别名</label>
+              <input type="text" class="form-control" id="edit-alias" required>
+            </div>
+            <div class="mb-3">
+              <label for="edit-host" class="form-label">主机</label>
+              <input type="text" class="form-control" id="edit-host" required>
+            </div>
+            <div class="mb-3">
+              <label for="edit-port" class="form-label">端口</label>
+              <input type="number" class="form-control" id="edit-port" required>
+            </div>
+            <div class="form-check mb-3">
+              <input type="checkbox" class="form-check-input" id="edit-use-tls">
+              <label class="form-check-label" for="edit-use-tls">
+                <i class="bi bi-shield-lock"></i> 使用 TLS
+              </label>
+            </div>
+          </form>
+          <div id="edit-error" class="alert alert-danger" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="edit-save-btn">
+            <i class="bi bi-check-lg"></i> 保存更改
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Help Modal -->
+  <div class="modal fade" id="agentHelpModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-info text-white">
+          <h5 class="modal-title">
+            <i class="bi bi-question-circle me-2"></i>如何运行 ZfDash 代理
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>要管理远程主机，请在该机器上运行 ZfDash 代理:</p>
+
+          <h6 class="mt-4"><i class="bi bi-box-seam me-2"></i>如果已安装 ZfDash:</h6>
+          <pre class="bg-dark text-light p-3 rounded"><code>sudo zfdash --agent</code></pre>
+
+          <h6 class="mt-4"><i class="bi bi-code-slash me-2"></i>从源码运行:</h6>
+          <pre class="bg-dark text-light p-3 rounded"><code>sudo python src/main.py --agent</code></pre>
+
+          <h6 class="mt-4"><i class="bi bi-terminal me-2"></i>从源码完整安装:</h6>
+          <pre class="bg-dark text-light p-3 rounded"><code>git clone https://github.com/Jioyzen/zfdash-zh-cn.git
+cd zfdash-zh-cn
+uv sync
+sudo .venv/bin/python src/main.py --agent</code></pre>
+
+          <div class="alert alert-info mt-4 mb-0">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>注意:</strong> 代理默认监听 5555 端口并启用 TLS。
+            首次运行时，系统会提示您设置管理员密码。
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Control Center App -->
+  <script type="module" src="{{ url_for('static', filename='js/modules/control-center.js') }}"></script>
+</body>
+
+</html>
