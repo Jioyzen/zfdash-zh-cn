@@ -10,11 +10,11 @@
       },
       {
         "title": "Pull the latest image",
-        "command": "sudo docker pull ad4mts/zfdash:latest"
+        "command": "sudo docker pull jioyzen/zfdash-zh-cn:latest"
       },
       {
         "title": "Run the new container",
-        "command": "sudo docker run -d --name zfdash \\\n  --privileged \\\n  --network=host \\\n  --device=/dev/zfs:/dev/zfs \\\n  -v zfdash_config:/root/.config/ZfDash \\\n  -v zfdash_data:/opt/zfdash/data \\\n  -v /etc:/host-etc:ro \\\n  -v /dev/disk:/dev/disk:ro \\\n  -v /run/udev:/run/udev:ro \\\n  -v ~/.ssh:/root/.ssh:ro \\\n  -p 5001:5001 \\\n  --restart unless-stopped \\\n  ad4mts/zfdash:latest"
+        "command": "sudo docker run -d --name zfdash \\\n  --privileged \\\n  --network=host \\\n  --device=/dev/zfs:/dev/zfs \\\n  -v zfdash_config:/root/.config/ZfDash \\\n  -v zfdash_data:/opt/zfdash/data \\\n  -v /etc:/host-etc:ro \\\n  -v /dev/disk:/dev/disk:ro \\\n  -v /run/udev:/run/udev:ro \\\n  -v ~/.ssh:/root/.ssh:ro \\\n  -p 5001:5001 \\\n  --restart unless-stopped \\\n  jioyzen/zfdash-zh-cn:latest"
       }
     ],
     "notes": [
@@ -27,7 +27,7 @@
     "steps": [
       {
         "title": "Automated Update (Recommended)",
-        "command": "curl -sSL https://raw.githubusercontent.com/ad4mts/zfdash/main/get-zfdash.sh | bash"
+        "command": "curl -sSL https://raw.githubusercontent.com/Jioyzen/zfdash-zh-cn/main/get-zfdash.sh | bash"
       },
       {
         "title": "Manual Update (Alternative)",

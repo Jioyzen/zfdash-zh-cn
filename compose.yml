@@ -2,7 +2,7 @@ name: zfdash
 services:
   zfdash:
     container_name: zfdash
-    image: ad4mts/zfdash:latest
+    image: jioyzen/zfdash-zh-cn:latest
     build: .
     privileged: true
     network_mode: host

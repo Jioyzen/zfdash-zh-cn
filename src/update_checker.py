@@ -15,9 +15,9 @@ from typing import Optional, Tuple, Dict, Any
 from version import __version__, __repository__
 
 # GitHub API endpoint for latest release
-GITHUB_API_URL = f"https://api.github.com/repos/ad4mts/zfdash/releases/latest"
+GITHUB_API_URL = f"https://api.github.com/repos/Jioyzen/zfdash-zh-cn/releases/latest"
 # Raw GitHub URL for update instructions (fetches from src/data/ in repo)
-INSTRUCTIONS_URL = "https://raw.githubusercontent.com/ad4mts/zfdash/main/src/data/update_instructions.json"
+INSTRUCTIONS_URL = "https://raw.githubusercontent.com/Jioyzen/zfdash-zh-cn/main/src/data/update_instructions.json"
 REQUEST_TIMEOUT = 10  # seconds
 
 # Local fallback path for update instructions (follows paths.py pattern)

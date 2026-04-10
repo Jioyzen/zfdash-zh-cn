@@ -6,7 +6,7 @@ set -e
 # --- Configuration ---
 # Set the Docker Hub repository where the image is published.
 # Replace 'your-dockerhub-username' with your actual Docker Hub username.
-DOCKERHUB_REPO="ad4mts/zfdash"
+DOCKERHUB_REPO="jioyzen/zfdash-zh-cn"
 IMAGE_NAME="${DOCKERHUB_REPO}:latest"
 CONTAINER_NAME="zfdash"
 

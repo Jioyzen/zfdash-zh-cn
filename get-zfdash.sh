@@ -91,7 +91,7 @@ log_info "Detected platform: ${PLATFORM_TAG}"
 # 2. Get Latest Release URL
 log_info "Fetching latest release info from GitHub..."
 
-REPO="ad4mts/zfdash"
+REPO="Jioyzen/zfdash-zh-cn"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
 # Fetch release data

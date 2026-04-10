@@ -160,12 +160,12 @@ sudo chmod 644 /usr/share/polkit-1/actions/org.zfsgui.pkexec.daemon.launch.polic
 
 *   **从 Docker Hub（推荐）：**
     ```bash
-    sudo docker pull ad4mts/zfdash:latest
+    sudo docker pull jioyzen/zfdash-zh-cn:latest
     ```
 
 *   **从 GitHub Container Registry（备选）：**
     ```bash
-    sudo docker pull ghcr.io/ad4mts/zfdash:latest
+    sudo docker pull ghcr.io/jioyzen/zfdash-zh-cn:latest
     ```
 
 ### 2. 运行容器
@@ -185,7 +185,7 @@ sudo docker run -d --name zfdash \
   -v ~/.ssh:/root/.ssh:ro \
   -p 5001:5001 \
   --restart unless-stopped \
-  ad4mts/zfdash:latest
+  jioyzen/zfdash-zh-cn:latest
 ```
 
 Docker Compose 栈也[已包含](compose.yml)。要使用它代替上述 Docker 命令：
